@@ -295,9 +295,20 @@ async function main() {
   console.log(`  password: ${process.env.ADMIN_PASSWORD ?? "standard2026"}`);
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+/* Only run when this file is invoked as a script (e.g. `npm run db:seed`).
+ * When imported by auto-seed.ts on the server, the imported module must
+ * NOT execute the CLI block — otherwise process.exit() kills the
+ * serverless function mid-request, returning empty 500s. */
+import { fileURLToPath } from "node:url";
+const isMain =
+  typeof process.argv[1] === "string" &&
+  import.meta.url === new URL(`file://${process.argv[1]}`).href;
+
+if (isMain) {
+  main()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}
