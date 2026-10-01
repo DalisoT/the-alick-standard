@@ -2,7 +2,7 @@
 # Pins Node 20 LTS, installs dev deps (needed for `next build` + tsx for db:seed).
 
 [phases.setup]
-nixPkgs = ["nodejs-20_x", "openssl"]
+nixPkgs = ["nodejs_20", "openssl"]
 
 [phases.install]
 cmds = ["npm ci --include=dev"]
