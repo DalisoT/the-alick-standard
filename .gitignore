@@ -1,0 +1,22 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+.vercel
+.tsbuildinfo
+next-env.d.ts
+
+# Dev test scripts (kept out of the public repo; they're throwaway)
+e2e-test.cjs
+test-reschedule.cjs
+wipe-db.cjs
+reset-data.cjs
+*.bak

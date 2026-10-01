@@ -1,0 +1,51 @@
+{
+  "name": "the-alick-standard",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:push": "drizzle-kit push",
+    "db:seed": "tsx src/lib/db/seed.ts",
+    "db:seed:demo": "tsx src/lib/db/seed.ts -- --with-demo",
+    "db:reset": "node scripts/reset-db.cjs && npm run db:seed",
+    "db:studio": "drizzle-kit studio",
+    "icons:logo": "node scripts/compress-logo.cjs"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.9.0",
+    "@libsql/client": "^0.14.0",
+    "bcryptjs": "^2.4.3",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "drizzle-orm": "^0.33.0",
+    "framer-motion": "^11.11.17",
+    "jose": "^5.9.6",
+    "lucide-react": "^0.460.0",
+    "nanoid": "^5.0.7",
+    "next": "14.2.18",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.53.0",
+    "tailwind-merge": "^2.5.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "drizzle-kit": "^0.24.2",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.18",
+    "postcss": "^8.4.47",
+    "sharp": "^0.35.5",
+    "tailwindcss": "^3.4.13",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}
