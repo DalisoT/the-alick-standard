@@ -1,0 +1,33 @@
+# THE ALICK STANDARD — Railway.app deployment config
+#
+# See https://docs.railway.app for the full reference.
+
+[build]
+# Railway auto-detects Next.js and runs `npm run build`.
+# Use the Nixpacks builder so we can add a persistent volume for SQLite.
+builder = "NIXPACKS"
+
+[deploy]
+# Restart policy
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# Healthcheck hits the home page
+healthcheckPath = "/"
+healthcheckTimeout = 30
+
+# Persistent volume for the SQLite file.
+# Add this in the Railway dashboard under "Variables → Volumes":
+#   Mount path: /app/data
+# After deploy the SQLite database lives at /app/data/tas.db.
+
+# Production start — Next.js respects the PORT env var Railway injects.
+startCommand = "npm run start"
+
+# Run an extra migration / seed step on every deploy (idempotent — the
+# schema CREATE TABLE IF NOT EXISTS guards against duplicates).
+releaseCommand = "npm run db:push 2>/dev/null || true"
+
+[[mounts]]
+source = "tas_data"
+destination = "/app/data"

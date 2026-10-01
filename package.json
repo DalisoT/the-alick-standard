@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
     "lint": "next lint",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/lib/db/seed.ts",
@@ -13,6 +13,9 @@
     "db:reset": "node scripts/reset-db.cjs && npm run db:seed",
     "db:studio": "drizzle-kit studio",
     "icons:logo": "node scripts/compress-logo.cjs"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
