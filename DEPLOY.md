@@ -1,161 +1,142 @@
-# Deploying THE ALICK STANDARD to Railway.app
+# Deploying THE ALICK STANDARD to Vercel + Turso
 
-Railway keeps the SQLite file on a **persistent volume** so your bookings
-survive every redeploy. The whole setup is ~5 minutes.
-
----
-
-## 1 · Create a Railway account
-
-1. Go to https://railway.app
-2. Sign in with **GitHub** (use the `DalisoT` account)
-3. Verify your email if prompted
+**Free forever.** Vercel hosts the Next.js app, Turso hosts the SQLite-compatible
+database. The same `libsql` driver that powers local dev talks to Turso in
+production — zero code change, just swap `DATABASE_URL`.
 
 ---
 
-## 2 · Create the project
+## 1 · One-time setup (10 minutes)
 
-1. Click **New Project** → **Deploy from GitHub repo**
-2. Select **`DalisoT/the-alick-standard`**
-3. Railway will detect it's a Next.js app and start building automatically
+### 1a. Create a Turso database
 
-The first build will fail because we haven't set env vars or a volume yet —
-that's expected.
+1. Go to **https://turso.tech** → sign in with **GitHub** (use `DalisoT`)
+2. **Create database** → name: `the-alick-standard` → region: closest to your customers (e.g. `ams` for Europe, `lhr` for UK, `iad` for US East)
+3. After creation, Turso shows you:
+   - **Database URL** — looks like `libsql://the-alick-standard-yourname.turso.io`
+   - Click **Create token** → name it `vercel` → copy the token (long string starting with `eyJ...`)
+
+Keep both somewhere safe — you'll paste them into Vercel in step 2.
+
+### 1b. (Optional but nice) Install the Turso CLI locally
+
+If you want to inspect / back up the database later, install the CLI:
+
+```bash
+# macOS / Linux
+curl -sSfL https://get.turso.tech/install.sh | bash
+
+# Windows
+irm https://get.turso.tech/install.ps1 | iex
+```
+
+Then `turso auth login` and `turso db shell the-alick-standard` opens a REPL against your prod DB.
 
 ---
 
-## 3 · Add the persistent volume
+## 2 · Deploy to Vercel (5 minutes)
 
-This is what keeps your SQLite database alive across deploys.
+1. Go to **https://vercel.com** → **Sign in with GitHub** (use `DalisoT`)
+2. Click **Add New… → Project**
+3. **Import** `DalisoT/the-alick-standard`
+4. Framework auto-detected: **Next.js**. Don't change anything.
+5. Expand **Environment Variables** and add:
 
-1. In your Railway project, click on the **service card**
-2. Open the **Variables** tab
-3. Switch to the **Settings** tab → scroll to **Volumes**
-4. Click **+ New Volume**
-   - **Mount path:** `/app/data`
-   - **Size:** `1 GB` (plenty for thousands of bookings)
-5. Click **Add**
-
-The volume is now mounted. The SQLite file lives at `/app/data/tas.db`.
-
----
-
-## 4 · Set environment variables
-
-Still on the **Variables** tab, click **+ New Variable** and add each of these:
-
-| Variable | Value |
+| Name | Value |
 | --- | --- |
-| `DATABASE_URL` | `file:/app/data/tas.db` |
-| `AUTH_SECRET` | *(generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)* |
+| `DATABASE_URL` | `libsql://the-alick-standard-yourname.turso.io` |
+| `DATABASE_AUTH_TOKEN` | the long token from step 1a |
+| `AUTH_SECRET` | open a terminal and run `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `ADMIN_USERNAME` | `alick` |
 | `ADMIN_PASSWORD` | *(pick a strong password)* |
 | `NEXT_PUBLIC_BUSINESS_NAME` | `THE ALICK STANDARD` |
 | `NEXT_PUBLIC_WHATSAPP_NUMBER` | `260977000000` |
-| `NEXT_PUBLIC_SITE_URL` | *(your Railway URL — see step 5)* |
 
-> Tip: generate a strong `AUTH_SECRET` in any Node 24 terminal:
-> ```bash
-> node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-> ```
+6. Click **Deploy**.
+7. Wait ~90 seconds. The build succeeds (Vercel ignores dev-only deps), the schema auto-creates in Turso, and the seed runs on first boot.
 
----
-
-## 5 · Get your public URL
-
-1. In **Settings** tab → **Networking** → click **Generate Domain**
-2. Railway gives you something like `the-alick-standard-production.up.railway.app`
-3. Copy that URL into the `NEXT_PUBLIC_SITE_URL` variable above
-4. Railway will redeploy automatically when the env changes
+Vercel gives you a URL like `https://the-alick-standard.vercel.app`.
 
 ---
 
-## 6 · Trigger a redeploy
+## 3 · First-time setup runs automatically
 
-Go to the **Deployments** tab → click the three-dot menu on the latest
-deployment → **Redeploy**. The build runs again, picks up the new env
-variables, and your live URL comes online in ~2 minutes.
+When the first request hits your Vercel deployment:
 
----
+- **`src/instrumentation.ts`** calls `ensureSchema()` which runs `CREATE TABLE IF NOT EXISTS` for every table — idempotent, safe to run on every boot.
+- Then **`runSeedIfEmpty()`** checks if the admin user table is empty. If so, it inserts:
+  - The admin user (`ADMIN_USERNAME` / `ADMIN_PASSWORD` from env)
+  - Business settings singleton
+  - Weekly hours (Mon–Sat 09:00–19:00, Sun closed)
+  - 7 default services
 
-## 7 · First-time database seed
+All sections are gated on `count() === 0` checks, so re-running is harmless.
 
-After the first successful deploy, open a **shell** on the service
-(Railway dashboard → service → "Shell" tab) and run:
-
-```bash
-npm run db:seed
-```
-
-This creates your admin user, the 7 default services, weekly hours, and
-business settings. **Run it exactly once** — the script is idempotent
-but you only need the defaults once.
-
-To add demo data later (sample bookings/customers for screenshots):
-
-```bash
-npm run db:seed:demo
-```
+If you want to verify the seed worked, open `https://your-app.vercel.app/admin/login` — log in with the credentials from your env vars.
 
 ---
 
-## 8 · Smoke test
+## 4 · Smoke test
 
-Open your Railway URL in a browser:
+Open your Vercel URL:
 
 - ✅ Public site loads (home, services, book)
 - ✅ `/admin/login` loads
-- ✅ Log in with the `ADMIN_USERNAME` / `ADMIN_PASSWORD` you set
-- ✅ Dashboard shows the seeded services
-- ✅ From another tab/phone, open `/book/shop` and book a slot — the
-  admin dashboard should toast the booking in real time
+- ✅ Log in → dashboard shows KPIs, recent appointments
+- ✅ From another tab/phone, open `/book/shop` and book a slot
+- ✅ Admin dashboard toasts the new booking in real time
+
+If anything fails, hit **Vercel → Logs** for the runtime error.
 
 ---
 
-## 9 · Point a real domain (optional)
+## 5 · Point a real domain
 
 1. Buy a domain (e.g. `thealickstandard.com`)
-2. In Railway → **Settings** → **Networking** → **Custom Domain**
-3. Add `thealickstandard.com` and `www.thealickstandard.com`
-4. Railway will show the CNAME records to add at your registrar
-5. Update `NEXT_PUBLIC_SITE_URL` to `https://thealickstandard.com`
-6. SSL is automatic — no config needed
+2. Vercel → your project → **Settings → Domains**
+3. Type `thealickstandard.com` → **Add**
+4. Vercel shows the DNS records to add at your registrar
+5. SSL is automatic — no config needed
+6. Add `NEXT_PUBLIC_SITE_URL=https://thealickstandard.com` to env vars and redeploy
 
 ---
 
-## 10 · Daily backups (recommended)
+## 6 · Daily backups
 
-The SQLite file is one tiny file. Backing it up is trivial. Two options:
-
-**Option A — Railway's built-in snapshots**
-Settings → Backups → enable daily snapshot of the volume. Done.
-
-**Option B — Cron-style shell script**
-Open a Railway shell and run:
+The Turso CLI gives you one-command backups:
 
 ```bash
-cp /app/data/tas.db /tmp/backup-$(date +%F).db
-# Then download via Railway's file browser or set up an S3 upload.
+# Manual snapshot
+turso db shell the-alick-standard ".dump" > backup-$(date +%F).sql
+
+# Or use the built-in scheduled backups in the Turso dashboard.
 ```
 
-For a single barber shop, **Option A is plenty**.
+For a single-barber shop, Turso's built-in daily snapshot (free tier includes 7-day retention) is plenty.
 
 ---
 
-## What's already configured for you
+## What's already wired up for Vercel
 
-| File | What it does |
+| File | Why it matters |
 | --- | --- |
-| `railway.toml` | Nixpacks builder, persistent volume mount, healthcheck, release command |
-| `Procfile` | Backup web process declaration |
-| `package.json` | `engines: node >=20`, `start` binds to `0.0.0.0:$PORT` |
-| `src/instrumentation.ts` | Auto-creates the schema on first boot — no separate migration step needed |
+| `src/instrumentation.ts` | Auto-runs schema + seed on first boot — no manual `db:seed` step needed |
+| `src/lib/db/auto-seed.ts` | Calls `seedDefaults()` only when the admin table is empty |
+| `src/lib/db/index.ts` | Same `@libsql/client` driver for both local file and Turso |
+| `.env.example` | Documents the Turso `libsql://...` URL format |
+| `next.config.mjs` | Server-component external packages config keeps `libsql` working |
+
+---
+
+## Local dev still uses local SQLite
+
+When you run `npm run dev` locally, `DATABASE_URL=file:./data/tas.db` (set in `.env.local`) gives you the file-backed SQLite. Production switches that single variable to `libsql://...` and the same code runs unchanged.
 
 ---
 
 ## Costs
 
-- **Hobby plan**: $5/month of free credit, then usage-based (~$1–3/mo for a single Node service + 1 GB volume)
-- **Trial plan**: $1 free credit, perfect for testing
+- **Vercel Hobby** (free forever for personal use): 100 GB bandwidth, unlimited deploys
+- **Turso Starter** (free forever): 9 GB storage, 1 billion row reads/month, 100k row writes/day
 
-For a single-barber shop handling ~30 bookings/day, you'll comfortably stay under $5/month.
+For a single-barber shop handling ~30 bookings/day, you'll use **under 1 %** of either free tier. Truly $0/mo.

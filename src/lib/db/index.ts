@@ -43,6 +43,7 @@ const client =
   globalThis.__tasClient ??
   createClient({
     url: dbUrl,
+    authToken: process.env.DATABASE_AUTH_TOKEN || undefined,
   });
 
 if (process.env.NODE_ENV !== "production") {
