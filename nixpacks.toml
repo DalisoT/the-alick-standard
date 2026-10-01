@@ -1,0 +1,14 @@
+# THE ALICK STANDARD — Nixpacks build config for Railway.app
+# Pins Node 20 LTS, installs dev deps (needed for `next build` + tsx for db:seed).
+
+[phases.setup]
+nixPkgs = ["nodejs-20_x", "openssl"]
+
+[phases.install]
+cmds = ["npm ci --include=dev"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm run start"

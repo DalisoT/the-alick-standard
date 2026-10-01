@@ -15,7 +15,7 @@
     "icons:logo": "node scripts/compress-logo.cjs"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.0.0 <23"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
