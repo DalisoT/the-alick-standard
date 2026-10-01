@@ -22,17 +22,28 @@ import Image from "next/image";
 // can exceed the function execution budget on Hobby plan.
 export const revalidate = 60;
 
+import type { Service } from "@/lib/db/schema";
+
 export default async function HomePage() {
-  const [settingsRow] = await db
-    .select()
-    .from(schema.businessSettings)
-    .where(eq(schema.businessSettings.id, "singleton"))
-    .limit(1);
-  const services = await db
-    .select()
-    .from(schema.services)
-    .where(eq(schema.services.active, true))
-    .orderBy(asc(schema.services.displayOrder));
+  let settingsRow:
+    | { defaultTravelFeeNgwee: number; shopPhone: string; businessName: string }
+    | undefined;
+  let services: Service[] = [];
+  try {
+    [settingsRow] = (await db
+      .select()
+      .from(schema.businessSettings)
+      .where(eq(schema.businessSettings.id, "singleton"))
+      .limit(1)) as any;
+    services = (await db
+      .select()
+      .from(schema.services)
+      .where(eq(schema.services.active, true))
+      .orderBy(asc(schema.services.displayOrder))) as Service[];
+    console.log(`[home] rendered with ${services.length} services`);
+  } catch (err) {
+    console.error("[home] DB query failed, rendering empty:", err);
+  }
 
   const featured = services.slice(0, 4);
   const allServices = services;
