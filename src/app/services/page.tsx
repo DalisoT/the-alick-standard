@@ -5,7 +5,8 @@ import { Scissors, Clock, Home as HomeIcon, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { formatK } from "@/lib/utils";
 
-export const dynamic = "force-dynamic";
+// ISR: render at build, revalidate every 60s. Avoids per-request DB hit.
+export const revalidate = 60;
 
 export default async function ServicesPage() {
   const services = await db

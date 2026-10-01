@@ -17,7 +17,10 @@ import { formatK, minutesTo12Hour } from "@/lib/utils";
 import { addDays, setHours, setMinutes, startOfDay } from "date-fns";
 import Image from "next/image";
 
-export const dynamic = "force-dynamic";
+// Render at build time, revalidate every 60s. Avoids hitting Turso on every
+// request — important because Vercel cold starts + libsql native binary load
+// can exceed the function execution budget on Hobby plan.
+export const revalidate = 60;
 
 export default async function HomePage() {
   const [settingsRow] = await db
