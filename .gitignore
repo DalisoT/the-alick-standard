@@ -4,6 +4,8 @@ out/
 .env
 .env.local
 .env.*.local
+.env.production
+the-alick-standard-production.env
 *.log
 .DS_Store
 data/*.db
