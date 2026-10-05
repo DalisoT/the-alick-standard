@@ -4,22 +4,47 @@ import { asc, eq } from "drizzle-orm";
 import { Scissors, Clock, Home as HomeIcon, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { formatK } from "@/lib/utils";
-import type { Service } from "@/lib/db/schema";
 
 // ISR: render at build, revalidate every 60s. Avoids per-request DB hit.
 export const revalidate = 60;
 
+/* Hardcoded fallback services — guarantees the page ALWAYS renders even
+ * if the Turso query fails. Real published Tuna overrides these. */
+const FALLBACK_SERVICES: Array<{
+  id: string;
+  name: string;
+  description: string;
+  durationMinutes: number;
+  priceNgwee: number;
+  type: "shop" | "home" | "both";
+  active: number;
+  displayOrder: number;
+}> = [
+  { id: "fb-classic-haircut", name: "Classic Haircut", description: "Precision scissor + clipper cut, tailored line-up, hot towel finish.", durationMinutes: 45, priceNgwee: 12000, type: "both", active: 1, displayOrder: 1 },
+  { id: "fb-beard-sculpt", name: "Beard Sculpt", description: "Shape, line and condition. Hot towel, oil treatment, sharp edges.", durationMinutes: 30, priceNgwee: 8000, type: "both", active: 1, displayOrder: 2 },
+  { id: "fb-hot-towel-shave", name: "Hot Towel Shave", description: "Traditional straight-razor shave with steamed towels and balm.", durationMinutes: 45, priceNgwee: 10000, type: "both", active: 1, displayOrder: 3 },
+  { id: "fb-the-standard", name: "The Standard", description: "Haircut + beard sculpt + black mask. Our signature full reset.", durationMinutes: 75, priceNgwee: 18000, type: "both", active: 1, displayOrder: 4 },
+  { id: "fb-line-up", name: "Line-Up & Edge", description: "Crisp hairline, beard line and neck cleanup between full cuts.", durationMinutes: 20, priceNgwee: 6000, type: "both", active: 1, displayOrder: 5 },
+  { id: "fb-kids-cut", name: "Kids Cut", description: "Clean, patient cut for the young gentlemen (under 12).", durationMinutes: 30, priceNgwee: 8000, type: "shop", active: 1, displayOrder: 6 },
+  { id: "fb-black-mask", name: "Black Mask Treatment", description: "Deep-cleanse peel-off mask for face and neck.", durationMinutes: 20, priceNgwee: 7000, type: "both", active: 1, displayOrder: 7 },
+];
+
 export default async function ServicesPage() {
-  let services: Service[] = [];
+  let services = FALLBACK_SERVICES;
   try {
-    services = (await db
+    const live = await db
       .select()
       .from(schema.services)
       .where(eq(schema.services.active, true))
-      .orderBy(asc(schema.services.displayOrder))) as Service[];
-    console.log(`[services] rendered with ${services.length} services`);
+      .orderBy(asc(schema.services.displayOrder));
+    if (live && live.length > 0) {
+      services = live as typeof FALLBACK_SERVICES;
+      console.log(`[services] using ${live.length} live services from DB`);
+    } else {
+      console.log(`[services] DB returned 0 rows, using ${FALLBACK_SERVICES.length} fallback services`);
+    }
   } catch (err) {
-    console.error("[services] DB query failed, rendering empty:", err);
+    console.error("[services] DB query failed, using fallback:", err);
   }
 
   return (

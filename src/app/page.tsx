@@ -1,6 +1,6 @@
 import { PublicShell } from "@/components/public/PublicShell";
 import { db, schema } from "@/lib/db";
-import { eq, and, asc, gte, lte } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import Link from "next/link";
 import {
   Scissors,
@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { formatK, minutesTo12Hour } from "@/lib/utils";
-import { addDays, setHours, setMinutes, startOfDay } from "date-fns";
+import { addDays, startOfDay } from "date-fns";
 import Image from "next/image";
 
 // Render at build time, revalidate every 60s. Avoids hitting Turso on every
@@ -22,57 +22,85 @@ import Image from "next/image";
 // can exceed the function execution budget on Hobby plan.
 export const revalidate = 60;
 
-import type { Service } from "@/lib/db/schema";
+/* ─── Hardcoded fallbacks ─────────────────────────────────────────
+ * Guarantees the homepage ALWAYS renders. If the DB is unreachable or
+ * slow, the page shows these values instead of 500ing. */
+const FALLBACK_SERVICES = [
+  { id: "fb-classic-haircut", name: "Classic Haircut", description: "Precision scissor + clipper cut, tailored line-up, hot towel finish.", durationMinutes: 45, priceNgwee: 12000, type: "both" as const, active: 1, displayOrder: 1 },
+  { id: "fb-beard-sculpt", name: "Beard Sculpt", description: "Shape, line and condition. Hot towel, oil treatment, sharp edges.", durationMinutes: 30, priceNgwee: 8000, type: "both" as const, active: 1, displayOrder: 2 },
+  { id: "fb-hot-towel-shave", name: "Hot Towel Shave", description: "Traditional straight-razor shave with steamed towels and balm.", durationMinutes: 45, priceNgwee: 10000, type: "both" as const, active: 1, displayOrder: 3 },
+  { id: "fb-the-standard", name: "The Standard", description: "Haircut + beard sculpt + black mask. Our signature full reset.", durationMinutes: 75, priceNgwee: 18000, type: "both" as const, active: 1, displayOrder: 4 },
+  { id: "fb-line-up", name: "Line-Up & Edge", description: "Crisp hairline, beard line and neck cleanup between full cuts.", durationMinutes: 20, priceNgwee: 6000, type: "both" as const, active: 1, displayOrder: 5 },
+  { id: "fb-kids-cut", name: "Kids Cut", description: "Clean, patient cut for the young gentlemen (under 12).", durationMinutes: 30, priceNgwee: 8000, type: "shop" as const, active: 1, displayOrder: 6 },
+  { id: "fb-black-mask", name: "Black Mask Treatment", description: "Deep-cleanse peel-off mask for face and neck.", durationMinutes: 20, priceNgwee: 7000, type: "both" as const, active: 1, displayOrder: 7 },
+];
+
+const FALLBACK_TRAVEL_FEE_NGWEE = 5000;
 
 export default async function HomePage() {
-  let settingsRow:
-    | { defaultTravelFeeNgwee: number; shopPhone: string; businessName: string }
-    | undefined;
-  let services: Service[] = [];
+  // Defensive: each DB query falls back independently. The page always returns 200.
+  let travelFeeNgwee = FALLBACK_TRAVEL_FEE_NGWEE;
+  let services: typeof FALLBACK_SERVICES = FALLBACK_SERVICES;
+  let nextLabel = "Booking opening soon";
+
   try {
-    [settingsRow] = (await db
+    const settingsRows = await db
       .select()
       .from(schema.businessSettings)
       .where(eq(schema.businessSettings.id, "singleton"))
-      .limit(1)) as any;
-    services = (await db
+      .limit(1);
+    if (settingsRows[0]) {
+      travelFeeNgwee = settingsRows[0].defaultTravelFeeNgwee ?? FALLBACK_TRAVEL_FEE_NGWEE;
+    }
+  } catch (err) {
+    console.error("[home] settings query failed:", err);
+  }
+
+  try {
+    const liveServices = await db
       .select()
       .from(schema.services)
       .where(eq(schema.services.active, true))
-      .orderBy(asc(schema.services.displayOrder))) as Service[];
-    console.log(`[home] rendered with ${services.length} services`);
+      .orderBy(asc(schema.services.displayOrder));
+    if (liveServices.length > 0) {
+      services = liveServices as typeof FALLBACK_SERVICES;
+      console.log(`[home] using ${liveServices.length} live services`);
+    } else {
+      console.log(`[home] DB returned 0 services, using fallback`);
+    }
   } catch (err) {
-    console.error("[home] DB query failed, rendering empty:", err);
+    console.error("[home] services query failed, using fallback:", err);
+  }
+
+  try {
+    const dow = new Date().getDay();
+    const rulesRows = await db
+      .select()
+      .from(schema.availabilityRules)
+      .where(
+        and(
+          eq(schema.availabilityRules.dayOfWeek, dow),
+          eq(schema.availabilityRules.active, true),
+        ),
+      )
+      .limit(1);
+    const rulesRow = rulesRows[0];
+    if (rulesRow) {
+      const now = new Date();
+      const today = startOfDay(now);
+      let target = today;
+      if (rulesRow.startMinutes <= now.getHours() * 60 + now.getMinutes()) {
+        target = addDays(today, 1);
+      }
+      nextLabel = `Next opening: ${target.toLocaleDateString("en-GB", {
+        weekday: "long",
+      })} · ${minutesTo12Hour(rulesRow.startMinutes)}`;
+    }
+  } catch (err) {
+    console.error("[home] availability query failed:", err);
   }
 
   const featured = services.slice(0, 4);
-  const allServices = services;
-
-  // Pull "next available" preview for the hero (lightweight, just for display)
-  const dow = new Date().getDay();
-  const [rulesRow] = await db
-    .select()
-    .from(schema.availabilityRules)
-    .where(
-      and(
-        eq(schema.availabilityRules.dayOfWeek, dow),
-        eq(schema.availabilityRules.active, true),
-      ),
-    )
-    .limit(1);
-
-  const now = new Date();
-  let nextLabel = "Booking opening soon";
-  if (rulesRow) {
-    const today = startOfDay(now);
-    let target = today;
-    if (rulesRow.startMinutes <= now.getHours() * 60 + now.getMinutes()) {
-      target = addDays(today, 1);
-    }
-    nextLabel = `Next opening: ${target.toLocaleDateString("en-GB", {
-      weekday: "long",
-    })} · ${minutesTo12Hour(rulesRow.startMinutes)}`;
-  }
 
   return (
     <PublicShell>
@@ -92,7 +120,7 @@ export default async function HomePage() {
               <h1 className="display-h1 text-balance">
                 More than a cut.
                 <br />
-                <span className="gradient-text italic">It's the standard.</span>
+                <span className="gradient-text italic">It&apos;s the standard.</span>
               </h1>
               <p className="mt-6 max-w-xl text-lg text-cream/70 leading-relaxed">
                 Alick Tembo crafts a grooming experience that respects your
@@ -121,7 +149,7 @@ export default async function HomePage() {
                   ))}
                 </div>
                 <span>
-                  Trusted by Lusaka's most discerning gentlemen.
+                  Trusted by Lusaka&apos;s most discerning gentlemen.
                 </span>
               </div>
             </div>
@@ -238,30 +266,10 @@ export default async function HomePage() {
 
         <div className="grid gap-6 md:grid-cols-4">
           {[
-            {
-              n: "01",
-              icon: Scissors,
-              title: "Choose Service",
-              text: "Haircut, beard, shave, or the full Standard.",
-            },
-            {
-              n: "02",
-              icon: CalendarDays,
-              title: "Pick a Time",
-              text: "Real-time availability — book what you see.",
-            },
-            {
-              n: "03",
-              icon: HomeIcon,
-              title: "In-Shop or Home",
-              text: "Choose your location. Clear pricing, no surprises.",
-            },
-            {
-              n: "04",
-              icon: Crown,
-              title: "Show Up",
-              text: "Confirmation, reminder, and the best cut in Lusaka.",
-            },
+            { n: "01", icon: Scissors, title: "Choose Service", text: "Haircut, beard, shave, or the full Standard." },
+            { n: "02", icon: CalendarDays, title: "Pick a Time", text: "Real-time availability — book what you see." },
+            { n: "03", icon: HomeIcon, title: "In-Shop or Home", text: "Choose your location. Clear pricing, no surprises." },
+            { n: "04", icon: Crown, title: "Show Up", text: "Confirmation, reminder, and the best cut in Lusaka." },
           ].map((step) => (
             <div key={step.n} className="card-base p-6 relative">
               <span className="absolute top-4 right-5 font-mono text-xs text-accent/50">
@@ -292,7 +300,7 @@ export default async function HomePage() {
                 Convenience, priced clearly.
               </h2>
               <p className="mt-4 text-cream/65 leading-relaxed">
-                Book Alick at your home, office, hotel or event. You'll always
+                Book Alick at your home, office, hotel or event. You&apos;ll always
                 see the travel fee before you confirm — no surprises, no
                 haggling.
               </p>
@@ -302,7 +310,7 @@ export default async function HomePage() {
                     Travel Fee
                   </p>
                   <p className="font-display text-2xl gradient-text">
-                    {formatK(settingsRow?.defaultTravelFeeNgwee ?? 5000)}
+                    {formatK(travelFeeNgwee)}
                   </p>
                 </div>
                 <div className="rounded-xl border border-ink-line bg-ink-soft px-5 py-4">
@@ -312,10 +320,7 @@ export default async function HomePage() {
                   <p className="font-display text-2xl">Greater Lusaka</p>
                 </div>
               </div>
-              <Link
-                href="/book/home"
-                className="btn-primary mt-8 inline-flex"
-              >
+              <Link href="/book/home" className="btn-primary mt-8 inline-flex">
                 Book Home Service
                 <ArrowRight size={18} />
               </Link>
@@ -347,7 +352,7 @@ export default async function HomePage() {
           </h2>
           <p className="mt-4 text-cream/60">
             Booking takes less than 60 seconds. Choose your service, your time,
-            and whether you'd like to come in or have Alick come to you.
+            and whether you&apos;d like to come in or have Alick come to you.
           </p>
           <Link
             href="/book"
