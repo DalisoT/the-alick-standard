@@ -5,6 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useClickOutside } from "@/lib/hooks/use-click-outside";
 
 const nav = [
   { href: "/", label: "Home" },
@@ -14,15 +15,18 @@ const nav = [
 
 export function Header() {
   const [open, setOpen] = React.useState(false);
+  const menuWrapRef = React.useRef<HTMLDivElement>(null);
   const pathname = usePathname();
 
   React.useEffect(() => {
     setOpen(false);
   }, [pathname]);
 
+  useClickOutside(menuWrapRef, () => setOpen(false), open);
+
   return (
     <header className="sticky top-0 z-40 backdrop-blur-xl bg-ink/80 border-b border-ink-line safe-top">
-      <div className="container-x flex h-14 sm:h-16 items-center justify-between">
+      <div ref={menuWrapRef} className="container-x flex h-14 sm:h-16 items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5 group">
           <span className="relative h-10 w-10 sm:h-11 sm:w-11 rounded-full border border-accent/40 bg-ink-soft group-hover:border-accent transition shrink-0 overflow-hidden">
             <Image

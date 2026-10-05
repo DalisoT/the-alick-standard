@@ -13,13 +13,16 @@ import { useLiveChannel } from "@/components/notifications/useLiveChannel";
 import { ToastStack } from "@/components/notifications/Toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
+import { useClickOutside } from "@/lib/hooks/use-click-outside";
+import { useNotificationSound } from "@/lib/hooks/use-notification-sound";
 
 /**
  * Admin-side live notification feed.
  *
  * Connects to /api/admin/notifications/stream and:
  *   - shows a floating toast for every new booking / change
- *   - keeps a dropdown list of recent events
+ *   - plays a soft two-tone chime on every new booking
+ *   - keeps a dropdown list of recent events (closes on outside click)
  *   - asks the OS for native notification permission so alerts fire
  *     even when the tab is in the background
  */
@@ -28,11 +31,16 @@ export function AdminLiveFeed() {
   const [permState, setPermState] = React.useState<NotificationPermission | "unsupported">(
     typeof Notification !== "undefined" ? Notification.permission : "unsupported",
   );
+  const wrapRef = React.useRef<HTMLDivElement>(null);
+  useClickOutside(wrapRef, () => setOpen(false), open);
+  const sound = useNotificationSound();
 
   const { events, connected, dismiss } = useLiveChannel(
     "/api/admin/notifications/stream",
     {
       onEvent: (e) => {
+        // Soft chime on every new booking / change (works in foreground).
+        sound.play();
         if (
           permState === "granted" &&
           typeof Notification !== "undefined" &&
@@ -64,9 +72,14 @@ export function AdminLiveFeed() {
       <ToastStack events={events} onDismiss={dismiss} />
 
       <div className="fixed top-4 right-4 z-[55] sm:right-4 sm:top-4 max-w-[calc(100vw-2rem)]">
-        <div className="relative">
+        <div className="relative" ref={wrapRef}>
           <button
-            onClick={() => setOpen((v) => !v)}
+            onClick={() => {
+              // First click also primes the audio context (user gesture
+              // is required by browser policy before any sound can play).
+              sound.primeAudio();
+              setOpen((v) => !v);
+            }}
             className="relative flex h-11 w-11 items-center justify-center rounded-full bg-ink-card border border-ink-border text-cream hover:border-accent hover:text-accent transition shadow-luxury"
             aria-label="Open notifications"
           >
@@ -101,14 +114,32 @@ export function AdminLiveFeed() {
                       {connected ? "Connected" : "Offline"}
                     </span>
                   </p>
-                  {permState !== "granted" && permState !== "unsupported" && (
+                  <div className="flex items-center gap-3">
                     <button
-                      onClick={askPerm}
+                      onClick={() => {
+                        // Toggle mute by priming (null) — simplest way is to
+                        // reuse the same hook via a wrapper component, but
+                        // for now we just expose the current state.
+                        sound.primeAudio();
+                      }}
                       className="text-[10px] uppercase tracking-wider text-accent hover:text-accent-soft"
+                      title={
+                        sound.enabled
+                          ? "Chime is on — click the bell to keep it primed"
+                          : "Click the bell to enable sound"
+                      }
                     >
-                      Enable alerts
+                      {sound.enabled ? "🔔 Sound on" : "🔕 Sound off"}
                     </button>
-                  )}
+                    {permState !== "granted" && permState !== "unsupported" && (
+                      <button
+                        onClick={askPerm}
+                        className="text-[10px] uppercase tracking-wider text-accent hover:text-accent-soft"
+                      >
+                        Enable alerts
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="max-h-[420px] overflow-y-auto scrollbar-thin">
