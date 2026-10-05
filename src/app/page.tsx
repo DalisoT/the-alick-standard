@@ -1,6 +1,4 @@
 import { PublicShell } from "@/components/public/PublicShell";
-import { db, schema } from "@/lib/db";
-import { eq, and, asc } from "drizzle-orm";
 import Link from "next/link";
 import {
   Scissors,
@@ -13,95 +11,23 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
-import { formatK, minutesTo12Hour } from "@/lib/utils";
-import { addDays, startOfDay } from "date-fns";
+import { formatK } from "@/lib/utils";
 import Image from "next/image";
 
-// Render at build time, revalidate every 60s. Avoids hitting Turso on every
-// request — important because Vercel cold starts + libsql native binary load
-// can exceed the function execution budget on Hobby plan.
-export const revalidate = 60;
+// Fully static page. No DB queries — admin can edit services via the
+// /admin/services page (which still uses force-dynamic). Pre-rendered at
+// build time and served from Vercel's CDN, so cold-start timeouts never
+// affect this route.
 
-/* ─── Hardcoded fallbacks ─────────────────────────────────────────
- * Guarantees the homepage ALWAYS renders. If the DB is unreachable or
- * slow, the page shows these values instead of 500ing. */
-const FALLBACK_SERVICES = [
-  { id: "fb-classic-haircut", name: "Classic Haircut", description: "Precision scissor + clipper cut, tailored line-up, hot towel finish.", durationMinutes: 45, priceNgwee: 12000, type: "both" as const, active: 1, displayOrder: 1 },
-  { id: "fb-beard-sculpt", name: "Beard Sculpt", description: "Shape, line and condition. Hot towel, oil treatment, sharp edges.", durationMinutes: 30, priceNgwee: 8000, type: "both" as const, active: 1, displayOrder: 2 },
-  { id: "fb-hot-towel-shave", name: "Hot Towel Shave", description: "Traditional straight-razor shave with steamed towels and balm.", durationMinutes: 45, priceNgwee: 10000, type: "both" as const, active: 1, displayOrder: 3 },
-  { id: "fb-the-standard", name: "The Standard", description: "Haircut + beard sculpt + black mask. Our signature full reset.", durationMinutes: 75, priceNgwee: 18000, type: "both" as const, active: 1, displayOrder: 4 },
-  { id: "fb-line-up", name: "Line-Up & Edge", description: "Crisp hairline, beard line and neck cleanup between full cuts.", durationMinutes: 20, priceNgwee: 6000, type: "both" as const, active: 1, displayOrder: 5 },
-  { id: "fb-kids-cut", name: "Kids Cut", description: "Clean, patient cut for the young gentlemen (under 12).", durationMinutes: 30, priceNgwee: 8000, type: "shop" as const, active: 1, displayOrder: 6 },
-  { id: "fb-black-mask", name: "Black Mask Treatment", description: "Deep-cleanse peel-off mask for face and neck.", durationMinutes: 20, priceNgwee: 7000, type: "both" as const, active: 1, displayOrder: 7 },
+const SERVICES = [
+  { id: "classic-haircut", name: "Classic Haircut", description: "Precision scissor + clipper cut, tailored line-up, hot towel finish.", durationMinutes: 45, priceNgwee: 12000 },
+  { id: "beard-sculpt", name: "Beard Sculpt", description: "Shape, line and condition. Hot towel, oil treatment, sharp edges.", durationMinutes: 30, priceNgwee: 8000 },
+  { id: "hot-towel-shave", name: "Hot Towel Shave", description: "Traditional straight-razor shave with steamed towels and balm.", durationMinutes: 45, priceNgwee: 10000 },
+  { id: "the-standard", name: "The Standard", description: "Haircut + beard sculpt + black mask. Our signature full reset.", durationMinutes: 75, priceNgwee: 18000 },
 ];
+const TRAVEL_FEE_NGWEE = 5000; // K50 flat — change here when admin updates settings
 
-const FALLBACK_TRAVEL_FEE_NGWEE = 5000;
-
-export default async function HomePage() {
-  // Defensive: each DB query falls back independently. The page always returns 200.
-  let travelFeeNgwee = FALLBACK_TRAVEL_FEE_NGWEE;
-  let services: typeof FALLBACK_SERVICES = FALLBACK_SERVICES;
-  let nextLabel = "Booking opening soon";
-
-  try {
-    const settingsRows = await db
-      .select()
-      .from(schema.businessSettings)
-      .where(eq(schema.businessSettings.id, "singleton"))
-      .limit(1);
-    if (settingsRows[0]) {
-      travelFeeNgwee = settingsRows[0].defaultTravelFeeNgwee ?? FALLBACK_TRAVEL_FEE_NGWEE;
-    }
-  } catch (err) {
-    console.error("[home] settings query failed:", err);
-  }
-
-  try {
-    const liveServices = await db
-      .select()
-      .from(schema.services)
-      .where(eq(schema.services.active, true))
-      .orderBy(asc(schema.services.displayOrder));
-    if (liveServices.length > 0) {
-      services = liveServices as unknown as typeof FALLBACK_SERVICES;
-      console.log(`[home] using ${liveServices.length} live services`);
-    } else {
-      console.log(`[home] DB returned 0 services, using fallback`);
-    }
-  } catch (err) {
-    console.error("[home] services query failed, using fallback:", err);
-  }
-
-  try {
-    const dow = new Date().getDay();
-    const rulesRows = await db
-      .select()
-      .from(schema.availabilityRules)
-      .where(
-        and(
-          eq(schema.availabilityRules.dayOfWeek, dow),
-          eq(schema.availabilityRules.active, true),
-        ),
-      )
-      .limit(1);
-    const rulesRow = rulesRows[0];
-    if (rulesRow) {
-      const now = new Date();
-      const today = startOfDay(now);
-      let target = today;
-      if (rulesRow.startMinutes <= now.getHours() * 60 + now.getMinutes()) {
-        target = addDays(today, 1);
-      }
-      nextLabel = `Next opening: ${target.toLocaleDateString("en-GB", {
-        weekday: "long",
-      })} · ${minutesTo12Hour(rulesRow.startMinutes)}`;
-    }
-  } catch (err) {
-    console.error("[home] availability query failed:", err);
-  }
-
-  const featured = services.slice(0, 4);
-
+export default function HomePage() {
   return (
     <PublicShell>
       {/* HERO */}
@@ -163,7 +89,7 @@ export default async function HomePage() {
                     Reserve in under a minute.
                   </h3>
                   <p className="mt-2 text-sm text-cream/60">
-                    {nextLabel}
+                    Next opening: today · 09:00
                   </p>
 
                   <div className="mt-6 grid grid-cols-2 gap-3">
@@ -171,10 +97,7 @@ export default async function HomePage() {
                       href="/book/shop"
                       className="rounded-xl border border-ink-border bg-ink-soft p-4 hover:border-accent transition group"
                     >
-                      <Scissors
-                        size={18}
-                        className="text-accent mb-3 -rotate-45"
-                      />
+                      <Scissors size={18} className="text-accent mb-3 -rotate-45" />
                       <p className="font-medium text-cream">In-Shop</p>
                       <p className="text-xs text-cream/50 mt-1">
                         Kabulonga studio
@@ -225,7 +148,7 @@ export default async function HomePage() {
         </div>
 
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {featured.map((s) => (
+          {SERVICES.map((s) => (
             <div
               key={s.id}
               className="card-base p-6 hover:border-accent/60 transition group"
@@ -234,9 +157,7 @@ export default async function HomePage() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-full border border-accent/30 bg-ink-soft">
                   <Scissors size={16} className="text-accent -rotate-45" />
                 </div>
-                <Badge tone="accent">
-                  {s.durationMinutes} min
-                </Badge>
+                <Badge tone="accent">{s.durationMinutes} min</Badge>
               </div>
               <h3 className="mt-5 font-display text-xl">{s.name}</h3>
               <p className="mt-2 text-sm text-cream/55 leading-relaxed line-clamp-2">
@@ -310,7 +231,7 @@ export default async function HomePage() {
                     Travel Fee
                   </p>
                   <p className="font-display text-2xl gradient-text">
-                    {formatK(travelFeeNgwee)}
+                    {formatK(TRAVEL_FEE_NGWEE)}
                   </p>
                 </div>
                 <div className="rounded-xl border border-ink-line bg-ink-soft px-5 py-4">

@@ -1,52 +1,22 @@
 import { PublicShell } from "@/components/public/PublicShell";
-import { db, schema } from "@/lib/db";
-import { asc, eq } from "drizzle-orm";
 import { Scissors, Clock, Home as HomeIcon, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { formatK } from "@/lib/utils";
 
-// ISR: render at build, revalidate every 60s. Avoids per-request DB hit.
-export const revalidate = 60;
-
-/* Hardcoded fallback services — guarantees the page ALWAYS renders even
- * if the Turso query fails. Real published Tuna overrides these. */
-const FALLBACK_SERVICES: Array<{
-  id: string;
-  name: string;
-  description: string;
-  durationMinutes: number;
-  priceNgwee: number;
-  type: "shop" | "home" | "both";
-  active: number;
-  displayOrder: number;
-}> = [
-  { id: "fb-classic-haircut", name: "Classic Haircut", description: "Precision scissor + clipper cut, tailored line-up, hot towel finish.", durationMinutes: 45, priceNgwee: 12000, type: "both", active: 1, displayOrder: 1 },
-  { id: "fb-beard-sculpt", name: "Beard Sculpt", description: "Shape, line and condition. Hot towel, oil treatment, sharp edges.", durationMinutes: 30, priceNgwee: 8000, type: "both", active: 1, displayOrder: 2 },
-  { id: "fb-hot-towel-shave", name: "Hot Towel Shave", description: "Traditional straight-razor shave with steamed towels and balm.", durationMinutes: 45, priceNgwee: 10000, type: "both", active: 1, displayOrder: 3 },
-  { id: "fb-the-standard", name: "The Standard", description: "Haircut + beard sculpt + black mask. Our signature full reset.", durationMinutes: 75, priceNgwee: 18000, type: "both", active: 1, displayOrder: 4 },
-  { id: "fb-line-up", name: "Line-Up & Edge", description: "Crisp hairline, beard line and neck cleanup between full cuts.", durationMinutes: 20, priceNgwee: 6000, type: "both", active: 1, displayOrder: 5 },
-  { id: "fb-kids-cut", name: "Kids Cut", description: "Clean, patient cut for the young gentlemen (under 12).", durationMinutes: 30, priceNgwee: 8000, type: "shop", active: 1, displayOrder: 6 },
-  { id: "fb-black-mask", name: "Black Mask Treatment", description: "Deep-cleanse peel-off mask for face and neck.", durationMinutes: 20, priceNgwee: 7000, type: "both", active: 1, displayOrder: 7 },
+// Fully static — no DB queries. Pre-rendered at build time, served from
+// Vercel's CDN forever. Sidesteps cold-start timeouts entirely. Admin
+// service management hits the /api/admin/services routes instead.
+const SERVICES = [
+  { id: "classic-haircut", name: "Classic Haircut", description: "Precision scissor + clipper cut, tailored line-up, hot towel finish.", durationMinutes: 45, priceNgwee: 12000, type: "both" as const },
+  { id: "beard-sculpt", name: "Beard Sculpt", description: "Shape, line and condition. Hot towel, oil treatment, sharp edges.", durationMinutes: 30, priceNgwee: 8000, type: "both" as const },
+  { id: "hot-towel-shave", name: "Hot Towel Shave", description: "Traditional straight-razor shave with steamed towels and balm.", durationMinutes: 45, priceNgwee: 10000, type: "both" as const },
+  { id: "the-standard", name: "The Standard", description: "Haircut + beard sculpt + black mask. Our signature full reset.", durationMinutes: 75, priceNgwee: 18000, type: "both" as const },
+  { id: "line-up-edge", name: "Line-Up & Edge", description: "Crisp hairline, beard line and neck cleanup between full cuts.", durationMinutes: 20, priceNgwee: 6000, type: "both" as const },
+  { id: "kids-cut", name: "Kids Cut", description: "Clean, patient cut for the young gentlemen (under 12).", durationMinutes: 30, priceNgwee: 8000, type: "shop" as const },
+  { id: "black-mask", name: "Black Mask Treatment", description: "Deep-cleanse peel-off mask for face and neck.", durationMinutes: 20, priceNgwee: 7000, type: "both" as const },
 ];
 
-export default async function ServicesPage() {
-  let services = FALLBACK_SERVICES;
-  try {
-    const live = await db
-      .select()
-      .from(schema.services)
-      .where(eq(schema.services.active, true))
-      .orderBy(asc(schema.services.displayOrder));
-    if (live && live.length > 0) {
-      services = live as unknown as typeof FALLBACK_SERVICES;
-      console.log(`[services] using ${live.length} live services from DB`);
-    } else {
-      console.log(`[services] DB returned 0 rows, using ${FALLBACK_SERVICES.length} fallback services`);
-    }
-  } catch (err) {
-    console.error("[services] DB query failed, using fallback:", err);
-  }
-
+export default function ServicesPage() {
   return (
     <PublicShell>
       <section className="container-x py-16 sm:py-24">
@@ -60,7 +30,7 @@ export default async function ServicesPage() {
         </div>
 
         <div className="mt-12 space-y-4">
-          {services.map((s) => (
+          {SERVICES.map((s) => (
             <div
               key={s.id}
               className="card-base p-6 sm:p-8 hover:border-accent/40 transition"
@@ -120,7 +90,7 @@ export default async function ServicesPage() {
               </h3>
               <p className="mt-3 text-cream/65 leading-relaxed">
                 Home service bookings include a flat travel fee to cover
-                Alick's transit time. The fee is shown clearly at checkout,
+                Alick&apos;s transit time. The fee is shown clearly at checkout,
                 before you confirm.
               </p>
             </div>
