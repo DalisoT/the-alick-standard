@@ -63,7 +63,7 @@ export default async function HomePage() {
       .where(eq(schema.services.active, true))
       .orderBy(asc(schema.services.displayOrder));
     if (liveServices.length > 0) {
-      services = liveServices as typeof FALLBACK_SERVICES;
+      services = liveServices as unknown as typeof FALLBACK_SERVICES;
       console.log(`[home] using ${liveServices.length} live services`);
     } else {
       console.log(`[home] DB returned 0 services, using fallback`);
