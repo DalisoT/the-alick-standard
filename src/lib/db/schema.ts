@@ -225,6 +225,148 @@ export const notificationLog = sqliteTable("notification_log", {
 });
 
 // ─────────────────────────────────────────────────────────────────
+// BARBERO MULTI-TENANT EXTENSIONS
+// Added 2026-10-08 when pivoting from single-tenant (Alick) to SaaS.
+// Every existing row will get a `tenant_id` on the migration script.
+// ─────────────────────────────────────────────────────────────────
+
+// Tenants — one row per barbershop subscribed to Barbero.
+export const tenants = sqliteTable("tenants", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull().unique(), // "alicks-standard" -> alicks-standard.barbero.co.zm
+  name: text("name").notNull(),
+  status: text("status").notNull().default("active"), // active | suspended | cancelled
+  plan: text("plan").notNull().default("free"),      // free | pro | business
+  ownerUserId: text("owner_user_id"),
+  brandingJson: text("branding_json").notNull().default("{}"),
+  // Per-tenant onboarding & billing state
+  onboardingStep: text("onboarding_step").notNull().default("created"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  planRenewsAt: integer("plan_renews_at", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
+// Staff users — owners, managers, barbers, receptionists
+// (multi-staff per tenant; replaces the old single `admin_users` table over time)
+export const users = sqliteTable(
+  "users",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    passwordHash: text("password_hash"), // null when using magic-link only
+    name: text("name").notNull(),
+    role: text("role").notNull().default("manager"), // owner | manager | barber | receptionist
+    image: text("image"),
+    emailVerifiedAt: integer("email_verified_at", { mode: "timestamp_ms" }),
+    lastLoginAt: integer("last_login_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    emailIdx: uniqueIndex("users_email_idx").on(t.email),
+    tenantIdx: index("users_tenant_idx").on(t.tenantId),
+  }),
+);
+
+// Magic-link / email-verification tokens (single-use)
+export const verificationTokens = sqliteTable("verification_tokens", {
+  identifier: text("identifier").notNull(),  // email
+  token: text("token").notNull().unique(),
+  expires: integer("expires", { mode: "timestamp_ms" }).notNull(),
+});
+
+// Invitations — owner invites a barber/manager by email
+export const invitations = sqliteTable(
+  "invitations",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: text("role").notNull().default("barber"),
+    token: text("token").notNull().unique(),
+    invitedBy: text("invited_by").notNull(),  // userId of inviter
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    acceptedAt: integer("accepted_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    tenantIdx: index("invitations_tenant_idx").on(t.tenantId),
+  }),
+);
+
+// Auth.js (NextAuth) session/account tables — Drizzle adapter requires these names.
+// We use the JWT strategy for sessions so the `sessions` table is for legacy compat;
+// the `accounts` table stores OAuth provider links (for future Google sign-in).
+export const sessions = sqliteTable("sessions", {
+  sessionToken: text("session_token").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  expires: integer("expires", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const accounts = sqliteTable("accounts", {
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  provider: text("provider").notNull(),
+  providerAccountId: text("provider_account_id").notNull(),
+  refreshToken: text("refresh_token"),
+  accessToken: text("access_token"),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
+  tokenType: text("token_type"),
+  scope: text("scope"),
+  idToken: text("id_token"),
+  sessionState: text("session_state"),
+});
+
+// Custom domains for Pro tenants — verified via DNS TXT record
+export const customDomains = sqliteTable(
+  "custom_domains",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+    domain: text("domain").notNull().unique(),
+    verificationToken: text("verification_token").notNull(),
+    verifiedAt: integer("verified_at", { mode: "timestamp_ms" }),
+    isPrimary: integer("is_primary", { mode: "boolean" }).notNull().default(false),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    tenantIdx: index("custom_domains_tenant_idx").on(t.tenantId),
+  }),
+);
+
+// Audit log — every privileged action goes here
+export const auditLog = sqliteTable(
+  "audit_log",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+    actorUserId: text("actor_user_id"),
+    action: text("action").notNull(),              // e.g. "appointment.confirmed"
+    targetType: text("target_type"),                // e.g. "appointment"
+    targetId: text("target_id"),
+    metadataJson: text("metadata_json"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    tenantIdx: index("audit_log_tenant_idx").on(t.tenantId),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────
 // Type exports
 // ─────────────────────────────────────────────────────────────────
 export type AdminUser = typeof adminUsers.$inferSelect;
@@ -239,3 +381,12 @@ export type NewAppointment = typeof appointments.$inferInsert;
 export type BusinessSettings = typeof businessSettings.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
 export type NewExpense = typeof expenses.$inferInsert;
+
+// Barbero SaaS types
+export type Tenant = typeof tenants.$inferSelect;
+export type NewTenant = typeof tenants.$inferInsert;
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+export type Invitation = typeof invitations.$inferSelect;
+export type CustomDomain = typeof customDomains.$inferSelect;
+export type AuditLog = typeof auditLog.$inferSelect;
